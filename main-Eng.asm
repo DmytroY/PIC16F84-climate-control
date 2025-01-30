@@ -2,509 +2,510 @@
 LIST   P=PIC16F84A
 __CONFIG _CP_OFF & _WDT_ON & _XT_OSC
 
-;------------Регистры ввода/вывода-------------------
-; PORTA		EQU     05h	;KEY and TERMOMETERS, bits:
-T0			EQU		0h	;первый датчик температуры
-T1			EQU		1h	;второй датчик температуры
-						;2h..4h - кнопки
+;------------ I/O REGISTERS -------------------
+; PORTA		EQU     05h	; KEY and TERMOMETERS, bits:
+T0		EQU	0h	; - temperature sensor 1
+T1		EQU	1h	; - temperature sensor 1
+				; - 2h..4h - buttons
 ; PORTB		EQU     06h	; LCD port, bits:
-BF			EQU		7h	;"занято". 7h-4h - шина данных
-E			EQU		3h	;Старт чтения.записи
-RW			EQU		2h	;1-читать/0-записать
-RS			EQU		1h	;1-данные/0-инструкции
-V			EQU		0h  ;выход управления клапаном
+BF		EQU	7h	; - "bussy". 7h-4h - data bus
+E		EQU	3h	; - Read/Write start
+RW		EQU	2h	; - 1-read/0-write
+RS		EQU	1h	; - 1-data/0-instruction
+V		EQU	0h	; - output signal for valve
 
-;-------------ячейки ОЗУ--------------------------------
+;------------- MEMORY --------------------------------
 		CBLOCK  0CH
-COUNT		;счетчик битов в/в термометра
-COUNT1		;счетчик п/п задержки
-COUNT2		;счетчик п/п задержки
-COUNT3		;счетчик1 для определения длинного нажания кнопки
-COUNT4		;счетчик2 для определения длинного нажания кнопки
-W_STOCK		;рабочая переменная п/п обработки сост клавиш и анализа темпер.
-T_STOCK		;рабочая переменная п/п общения с термометром
-RW_STOCK	;рабочая переменная п/п управления ЖКИ
-HEX			;переменная HEX которая потом пересч в DEC
-DEC_H		;десятки пересчитано из HEX
-DEC_L		;единицы пересчитано из HEX
-T_OUT		;температурa OUT HEX
-T_AIR		;температурa AIR HEX
-T_SET		;температурa SET HEX
-COUNT_750	;счетчик для времени конверсии 750мс
-COUNT_750_M	;счетчик для времени конверсии 750мс внешний
-KEY_ST		;Статусы кнопок,
-OUT_ST		;Статусы клапана и управления
+COUNT		; termometer I/O bits counter
+COUNT1		; delay routine counter
+COUNT2		; delay routine counter
+COUNT3		; counter 1 for detecting long button press
+COUNT4		; counter 2 for detecting long button press
+W_STOCK		; variable for key controller and temperature analyzer function
+T_STOCK		; variable for temperature communication function
+RW_STOCK	; variable for LCD controller
+HEX		; HEX variable - will be converted to DEC
+DEC_H		; tens digit of DEC, converted from HEX
+DEC_L		; unit digit of DEC, converted from HEX
+T_OUT		; OUT temperature in HEX
+T_AIR		; AIR temperature in HEX
+T_SET		; SET temperature in HEX
+COUNT_750	; convertion time counter 750ms
+COUNT_750_M	; outher convertion time counter 750ms
+KEY_ST		; keys status
+OUT_ST		; valve and control statuses
 		endc
 
 ;----- KEY_ST bits -----------------------------------
-M			EQU		7h	;длинное нажатие любой кнопки
-D			EQU		6h	;нажатие кнопки DOUN
-U			EQU		5h	;нажатие кнопки UP
+M			EQU		7h	; any button long press flag
+D			EQU		6h	; DOUN button pressed
+U			EQU		5h	; UP button pressed
 
 ; ----- OUT_ST bits ----------------------------------
-VL			EQU		7h	;1-клапан открыт/0-закрыт
-MOD			EQU		0h	;режим:1-контроль температуры/0-печка выключена
+VL			EQU		7h	; 1-open valve/0-close valve
+MOD			EQU		0h	; mode:1-check temperature/0-heater off
 
-;--------Константы-------------------
-#DEFINE		T_MAX	.40	;40'C верхняя граница предустаноки температуры
-#DEFINE		T_MIN	.10	;10'C нижняя граница предустаноки температуры
+;-------- CONSTANTS -------------------
+#DEFINE		T_MAX	.40	; 40'C is maximum adjustable temperature
+#DEFINE		T_MIN	.10	; 10'C is minimum adjustable temperature
 
-;----------начало исполняемого кода---------------------
+;---------- BEGINING OF EXECUTABLE CODE ---------------------
         ORG     0
-BEGIN:					;----Инициализации всякие-------
+BEGIN:					;---- INITIALISATIONS -------
 		MOVLW	.1
-		MOVWF	COUNT_750 	;счетчик задержки для конверсии температуры
-		MOVWF	COUNT_750_M	;счетчик задержки для конверсии температуры внешний
-		CLRF	KEY_ST		;ничего не нажато
-		CALL	INIT_A		;инициализация порта А-на ввод
-		CALL	INIT_B		;инициализация порта В-на вывод
-		CALL	INIT_LCD	;инициализация ЖКИ 16х2, 4-bit
-		CALL	HEADER_LCD	;вывод на ЖКИ первой неизменяемой сроки
-		call	T_SET_RD_EEPROM;читаем T_SET из EEPROM
-		call	T_SET_ON_LCD;oтображаем T_SET
-		call	OUT_ST_RD_EEPROM;читаем OUT_ST
-		btfss	OUT_ST,MOD	;усли в прошлый раз выключились в слип моде-идем туда
+		MOVWF	COUNT_750 	; convertion time counter 750ms
+		MOVWF	COUNT_750_M	; outher convertion time counter 750ms
+		CLRF	KEY_ST		; no button pressed
+		CALL	INIT_A		; Port A for input
+		CALL	INIT_B		; Port B for output
+		CALL	INIT_LCD	; LCD 16С…2, 4-bit
+		CALL	HEADER_LCD	; Show greeting
+		call	T_SET_RD_EEPROM	; read T_SET (desired temperature) from EEPROM
+		call	T_SET_ON_LCD	; display T_SET
+		call	OUT_ST_RD_EEPROM; read OUT_ST (valve and control statuses)
+		btfss	OUT_ST,MOD	; if last time before swich off system was in sleep mode do sleed
 		call	SYSTEM_SLEEP
-HANG:					;----Начало основного тела-------
-		CALL	TERMOMETR	;измерение температур
-		CALL	KEYS		;опрос клавиатуры
-		CALL	VALVE		;анализ температур и управление клапаном
+HANG:					;---- MAIN CYCLE -------
+		CALL	TERMOMETR	; measure temperatures
+		CALL	KEYS		; scan keys
+		CALL	VALVE		; manage valve depend of temperature and keys status
 		CLRWDT
 		GOTO	HANG
 
-;--------------Инициализация порта A-------------------------------
+;-------------- Port A Initialisation -------------------------------
 INIT_A
-; внимание!! нужно включить подтягивающие резисторы!!
-		BCF     STATUS,RP0    ;Выбор банка 0
-        CLRF    PORTA        ;Очистить регистр DATAPORT
-    	MOVLW   b'11111'  	 ;Загpузить B'11111' в pегистp W
-        BSF     STATUS,RP0    ;Выбор банка 1
-        MOVWF   TRISA        ;-входы
-		BCF     STATUS,RP0    ;Выбор банка 0
-		RETURN	
-;--------------Инициализация порта В -----------------------------
+; attention!! pull-up resistors must be enabled!!
+	BCF     STATUS,RP0	; set memory bank 0
+        CLRF    PORTA		; clear DATAPORT register A
+    	MOVLW   b'11111'  	; load B'11111' to register W
+        BSF     STATUS,RP0      ; set memory bank 1
+        MOVWF   TRISA           ; set as inputs
+	BCF     STATUS,RP0      ; set memory bank 0
+	RETURN	
+;-------------- Port B Initialisation -----------------------------
 INIT_B
-		BCF     STATUS,RP0	;Выбор банка 0
-      	MOVLW	b'00000001'	;Очищаем регистр порта В, но
-		ANDWF	PORTB,1		;сигнал управления клапаном не трогаем
-    	MOVLW   b'00000000'   ;Загpузить B'00000000' в pегистp W
-        BSF     STATUS,RP0    ;Выбор банка 1
-        MOVWF   TRISB        ;Все разряды установить как выходы 
-		BCF     STATUS,RP0    ;Выбор банка 0
-		RETURN
-;--------------ИНИЦИАЛИЗАЦИЯ LCD-----------------------------------
-INIT_LCD			;Инициализация LCD
-		MOVLW	.100
- 		CALL	DELAY_mS ;Ждем старта ЖКИ
+	BCF     STATUS,RP0	; set memory bank 0
+      	MOVLW	b'00000001'	; clear DATAPORT register B , but
+	ANDWF	PORTB,1		; do not touch valve control bit
+    	MOVLW   b'00000000'     ; load B'00000000' to register W
+        BSF     STATUS,RP0      ; set memory bank 1
+        MOVWF   TRISB           ; set as outputs
+	BCF     STATUS,RP0      ; set memory bank 0
+	RETURN
+;-------------- LCD initialisation -----------------------------------
+INIT_LCD
+	MOVLW	.100
+ 	CALL	DELAY_mS ;Р–РґРµРј СЃС‚Р°СЂС‚Р° Р–РљР
 
-		MOVLW	b'00110000'		;Function set(Interface is 8-bit long)
-		MOVWF	PORTB
-		BSF		PORTB,E		;старт записи
-		BCF		PORTB,E	
-		MOVLW	.5
- 		CALL	DELAY_mS ;Ждем
+	MOVLW	b'00110000'	; Function set(Interface is 8-bit long)
+	MOVWF	PORTB
+	BSF	PORTB,E		; write start
+	BCF	PORTB,E	
+	MOVLW	.5
+ 	CALL	DELAY_mS 	; wait
 
-		MOVLW	b'00110000'		;Function set(Interface is 8-bit long)
-		MOVWF	PORTB
-		BSF		PORTB,E		;старт записи
-		BCF		PORTB,E	
-		MOVLW	.100
- 		CALL	DELAY_mS ;Ждем
+	MOVLW	b'00110000'	; Function set(Interface is 8-bit long)
+	MOVWF	PORTB
+	BSF	PORTB,E		; write start
+	BCF	PORTB,E	
+	MOVLW	.100
+ 	CALL	DELAY_mS 	; wait
 
-		MOVLW	b'00110000'		;Function set(Interface is 8-bit long)
-		MOVWF	PORTB
-		BSF		PORTB,E		;старт записи
-		BCF		PORTB,E	
-		CALL	BUSY_LCD	;Ждем готовности
+	MOVLW	b'00110000'	; Function set(Interface is 8-bit long)
+	MOVWF	PORTB
+	BSF	PORTB,E		; write start
+	BCF	PORTB,E	
+	CALL	BUSY_LCD	; wait for readiness
 
-		MOVLW	b'00100000'		;устанавливаем 4-битный режим
-		MOVWF	PORTB
-		BSF		PORTB,E		;старт записи
-		BCF		PORTB,E	
-		CALL	BUSY_LCD	;Ждем готовности
-		MOVLW 	b'00101000'	; уст.4-бит работу и 2 линии 5х8
-		CALL	WRT_LCD_INSTR
-		MOVLW 	b'00001100' ;включаем дисплей и курсор не показывать
-		CALL	WRT_LCD_INSTR
-		MOVLW 	b'00000001' ;Очистить дисплей
-		CALL	WRT_LCD_INSTR
-		MOVLW 	b'00000110' ; Режим ввода.Инкремент адреса,
-		CALL	WRT_LCD_INSTR
-		RETURN
-;--------HEADER_LCD-----------------------------
+	MOVLW	b'00100000'	; set 4-bit mode
+	MOVWF	PORTB
+	BSF	PORTB,E		; write start
+	BCF	PORTB,E	
+	CALL	BUSY_LCD	; wait for readiness
+	MOVLW 	b'00101000'	; set 4-bit mode and 2 lines 5С…8
+	CALL	WRT_LCD_INSTR
+	MOVLW 	b'00001100' 	; swith on LCD, do not show cursor
+	CALL	WRT_LCD_INSTR
+	MOVLW 	b'00000001' 	; clear LCD
+	CALL	WRT_LCD_INSTR
+	MOVLW 	b'00000110' 	; input mode. address increment
+	CALL	WRT_LCD_INSTR
+	RETURN
+;-------- HEADER_LCD -----------------------------
 HEADER_LCD
-		MOVLW 	b'00000001' ;Очистить дисплей
-		CALL	WRT_LCD_INSTR
-		MOVLW 	81h			;курсор в 2поз. 1-й строки
-		CALL WRT_LCD_INSTR
-		MOVLW 	0x4F 		;"O"
-		CALL WRT_LCD_DATA
-		MOVLW 	0x55 		;"U"
-		CALL WRT_LCD_DATA
-		MOVLW 	0x54 		;"T"
-		CALL WRT_LCD_DATA
-		MOVLW 	87h			;курсор в 8поз. 1-й строки
-		CALL WRT_LCD_INSTR
-		MOVLW 	0x41 		;"A"
-		CALL WRT_LCD_DATA
-		MOVLW 	0x49 		;"I"
-		CALL WRT_LCD_DATA
-		MOVLW 	0x52 		;"R"
-		CALL WRT_LCD_DATA
-		MOVLW 	8Ch			;курсор в 13поз. 1-й строки
-		CALL WRT_LCD_INSTR
-		MOVLW 	0x53 		;"S"
-		CALL WRT_LCD_DATA
-		MOVLW 	0x45 		;"E"
-		CALL WRT_LCD_DATA
-		MOVLW 	0x54 		;"T"
-		CALL WRT_LCD_DATA
-		return
-;--------Опрос датчиков температуры----------------------
+	MOVLW 	b'00000001' 	; clear LCD
+	CALL	WRT_LCD_INSTR
+	MOVLW 	81h		; cursor to 2nd place in 1st string
+	CALL WRT_LCD_INSTR
+	MOVLW 	0x4F 		;"O"
+	CALL WRT_LCD_DATA
+	MOVLW 	0x55 		;"U"
+	CALL WRT_LCD_DATA
+	MOVLW 	0x54 		;"T"
+	CALL WRT_LCD_DATA
+	MOVLW 	87h		; cursor to 8 place in 1st string
+	CALL WRT_LCD_INSTR
+	MOVLW 	0x41 		;"A"
+	CALL WRT_LCD_DATA
+	MOVLW 	0x49 		;"I"
+	CALL WRT_LCD_DATA
+	MOVLW 	0x52 		;"R"
+	CALL WRT_LCD_DATA
+	MOVLW 	8Ch		; cursor to 13 place in 1st string
+	CALL WRT_LCD_INSTR
+	MOVLW 	0x53 		;"S"
+	CALL WRT_LCD_DATA
+	MOVLW 	0x45 		;"E"
+	CALL WRT_LCD_DATA
+	MOVLW 	0x54 		;"T"
+	CALL WRT_LCD_DATA
+	return
+;-------- Scan temperature sensors ----------------------
 TERMOMETR
-		DECFSZ	COUNT_750	
-		GOTO	TERM_END
-		DECFSZ	COUNT_750_M
-		GOTO	TERM_END		;--если время конверсии не прошло - пропускаем всю п/п
+	DECFSZ	COUNT_750	
+	GOTO	TERM_END
+	DECFSZ	COUNT_750_M
+	GOTO	TERM_END	; if convertion time did not pass skipp whole routine
 
-TERM_READ:;--------Старт чтения температуры--------------
-		CALL	T0_RESET	;Reset
-		MOVLW	0xCC		;skip ROM comand
-		CALL	T0_WRITE
-		MOVLW	0xBE		;Read scrachpad comand
-		CALL	T0_WRITE	;
-		CALL	T0_READ		;в W находится температура
-		MOVWF	T_AIR
+;-------- Read temperature --------------
+TERM_READ:
+	;-------- Read temperature sensors--------------
+	CALL	T0_RESET	; Reset
+	MOVLW	0xCC		; skip ROM comand
+	CALL	T0_WRITE
+	MOVLW	0xBE		; Read scrachpad comand
+	CALL	T0_WRITE	;
+	CALL	T0_READ		; now temperature 0 is in W
+	MOVWF	T_AIR
 
-		CALL	T1_RESET	;Reset
-		MOVLW	0xCC		;skip ROM comand
-		CALL	T1_WRITE
-		MOVLW	0xBE		;Read scrachpad comand
-		CALL	T1_WRITE
-		CALL	T1_READ		;в W находится температура
-		MOVWF	T_OUT		
+	CALL	T1_RESET	; Reset
+	MOVLW	0xCC		; skip ROM comand
+	CALL	T1_WRITE
+	MOVLW	0xBE		; Read scrachpad comand
+	CALL	T1_WRITE
+	CALL	T1_READ		; now temperature 1 is in W
+	MOVWF	T_OUT		
 
-		CALL	T_ON_LCD	;Отображаем изменения
+	CALL	T_ON_LCD	; display temperatures
 
-		;---------Старт конверсии температуры-----------
-		CALL	T0_RESET	;Reset
-		MOVLW	0xCC		;skip ROM comand
-		CALL	T0_WRITE
-		MOVLW	0x44		;Start convertion comand
-		CALL	T0_WRITE	;нужно не позже чем через 10 мкс подать паразитное питание.удерживать 750 мс
-        BSF		PORTA,T0	;установить 1 в регистре в/в для вывода Т0
-        BSF     STATUS,RP0	;Выбор банка 1
-		BCF		TRISA,T0	;переключить вывод Т0 на вывод
-		BCF     STATUS,RP0	;вернуть адресацию банка 0
+	;--------- temperature convertion -----------
+	CALL	T0_RESET	; Reset
+	MOVLW	0xCC		; skip ROM comand
+	CALL	T0_WRITE
+	MOVLW	0x44		; Start convertion comand
+	CALL	T0_WRITE	; it is necessary to supply parasitic power no later than 10 Вµs. hold for 750 ms
+        BSF	PORTA,T0	; set 1 in I/O register for T0 pin
+        BSF     STATUS,RP0	; set memory bank 1
+	BCF	TRISA,T0	; set pin T0 for output
+	BCF     STATUS,RP0	; set memory bank 0
 
-		CALL	T1_RESET	;Reset
-		MOVLW	0xCC		;skip ROM comand
-		CALL	T1_WRITE
-		MOVLW	0x44		;Start convertion comand
-		CALL	T1_WRITE	;нужно не позже чем через 10 мкс подать паразитное питание.удерживать 750 мс
-        BSF		PORTA,T1	;установить 1 в регистре в/в для вывода Т1
-        BSF     STATUS,RP0	;Выбор банка 1
-		BCF		TRISA,T1	;переключить вывод Т1 на вывод
-		BCF     STATUS,RP0	;вернуть адресацию банка 0
+	CALL	T1_RESET	; Reset
+	MOVLW	0xCC		; skip ROM comand
+	CALL	T1_WRITE
+	MOVLW	0x44		; Start convertion comand
+	CALL	T1_WRITE	; it is necessary to supply parasitic power no later than 10 Вµs. hold for 750 ms
+        BSF	PORTA,T1	; set 1 in I/O register for T1 pin
+        BSF     STATUS,RP0	; set memory bank 1
+	BCF	TRISA,T1	; set pin T1 for output
+	BCF     STATUS,RP0	; set memory bank 0
 		
-		MOVLW	.74		;Начало отсчета задержки
-		MOVWF	COUNT_750_M
+	MOVLW	.74		; Begining of delay counter
+	MOVWF	COUNT_750_M
 TERM_END:
-		RETURN
+	RETURN
 
-;--------Опрос клавиатуры-----------------------------------
+;-------- keys scan -----------------------------------
 KEYS
-		CLRF	KEY_ST		;обнуляем статусы клавиш
-		CLRF	COUNT3		;онуляем счетчики длинного нажатия
-		CLRF	COUNT4
+	CLRF	KEY_ST		; clear keys statuses
+	CLRF	COUNT3		; clear long press counters
+	CLRF	COUNT4
 
-		BTFSS	PORTA, 3h 	;читаем порт и выставляем флаги
-		BSF	    KEY_ST, D
-		BTFSS	PORTA, 2h 
-		BSF	    KEY_ST, U
-		INCF	KEY_ST,1	;если не нажата ни одна клавиша-конец п/п
-		DECFSZ	KEY_ST,1
-		GOTO	DRIGLING
-		GOTO	KEY_M1
+	BTFSS	PORTA, 3h 	; read port, set up flags
+	BSF	KEY_ST, D
+	BTFSS	PORTA, 2h 
+	BSF	KEY_ST, U
+	INCF	KEY_ST,1	; if no keys pressed - return
+	DECFSZ	KEY_ST,1
+	GOTO	DRIGLING
+	GOTO	KEY_M1
 DRIGLING:
-		MOVLW	.20
-		CALL 	DELAY_mS	;ждем 20mS
-		BTFSC	PORTA, 3h 	;обнуляем ложные флаги(дребезг)
-		BCF	    KEY_ST, D
-		BTFSC	PORTA, 2h 
-		BCF	    KEY_ST, U
+	MOVLW	.20
+	CALL 	DELAY_mS	; wait 20mS
+	BTFSC	PORTA, 3h 	; clear false flags caused by bounce noice of keys
+	BCF	KEY_ST, D
+	BTFSC	PORTA, 2h 
+	BCF	KEY_ST, U
 EXIT3:
-		DECFSZ	COUNT3		;считае как долго держат кнопку
-		GOTO	KEY_M2
-		DECFSZ	COUNT4
-		GOTO	KEY_M2
-		CLRF	KEY_ST		;если кнопка нажата дольше 760мс
-		BSF	    KEY_ST,M	
+	DECFSZ	COUNT3		; count how long key was pressed
+	GOTO	KEY_M2
+	DECFSZ	COUNT4
+	GOTO	KEY_M2
+	CLRF	KEY_ST		; if key pressed for more than 760ms
+	BSF	KEY_ST,M	
 		
 KEY_M2:
-		CLRWDT
-		MOVF	PORTA,0	;ждем когда отпустят все клавиши
-		ANDLW	b'11100'	;маска на клавиши
-		SUBLW	b'11101'
-		MOVWF	W_STOCK
-		DECFSZ	W_STOCK,1
-		GOTO	EXIT3
-		call	T_SET_RECALC	;персчитываем T_SET согласно нажатому
-		call	T_SET_ON_LCD	;Отображаем изменения T_SET
+	CLRWDT
+	MOVF	PORTA,0		; wait all keys release
+	ANDLW	b'11100'	; mask for keys
+	SUBLW	b'11101'
+	MOVWF	W_STOCK
+	DECFSZ	W_STOCK,1
+	GOTO	EXIT3
+	call	T_SET_RECALC	; recalculate T_SET in accordance with pressed key
+	call	T_SET_ON_LCD	; display РћС‚РѕР±СЂР°Р¶Р°РµРј РёР·РјРµРЅРµРЅРёСЏ T_SET
 
-		;анализируем изменение режимов
-		BTFSS	KEY_ST,M
-		GOTO	KEY_M1		;если не было долгого нажатия уходим
-		CALL	SYSTEM_SLEEP	;если долго нажата любая клавиша
-		CLRF	KEY_ST		;обнуляем статусы клавиш
+	;Р°РЅР°Р»РёР·РёСЂСѓРµРј РёР·РјРµРЅРµРЅРёРµ СЂРµР¶РёРјРѕРІ
+	BTFSS	KEY_ST,M	; if no long press
+	GOTO	KEY_M1		; return
+	CALL	SYSTEM_SLEEP	; else launch sleep mode
+	CLRF	KEY_ST		; reset keys statuses
 KEY_M1:		
-		RETURN
+	RETURN
 
 ;------------- T_SET_recalculation -----------
 T_SET_RECALC
-		;анализируем изменение опорной температуры
-		BTFSC	KEY_ST, U	;если была нажата клавиша-изменяяем T_SET
-		INCF	T_SET,1
-		BTFSC	KEY_ST, D
-		DECF	T_SET,1
-        ;проверяем достижение граничных значений
-		MOVF	T_SET,0		;If T_SET>max then T_SET-1
-		SUBLW	T_MAX		;верхнее граничное опорной температуры
-		MOVWF	W_STOCK
-		BTFSC	W_STOCK,7h
-		DECF	T_SET,1		;если перевалили, возвращаем границу
+	; manage desirable temperature
+	BTFSC	KEY_ST, U	; change T_SET in case + or - key pressed
+	INCF	T_SET,1
+	BTFSC	KEY_ST, D
+	DECF	T_SET,1
+        ; check temperature limits
+	MOVF	T_SET,0		; If T_SET>max then T_SET-1
+	SUBLW	T_MAX		; high limin of temperature settings
+	MOVWF	W_STOCK
+	BTFSC	W_STOCK,7h
+	DECF	T_SET,1		; if temperature seting too high returt maximum limit
 
-		MOVF	T_SET,0		;If T_SET<min then T_SET+1
-		SUBLW	T_MIN		;нижнее граничное опорной температуры
-		MOVWF	W_STOCK
-		DECF	W_STOCK,1
-		BTFSS	W_STOCK,7h
-		INCF	T_SET,1		;если перевалили, возвращаем границу
+	MOVF	T_SET,0		; If T_SET<min then T_SET+1
+	SUBLW	T_MIN		; low limit temperature settings
+	MOVWF	W_STOCK
+	DECF	W_STOCK,1
+	BTFSS	W_STOCK,7h
+	INCF	T_SET,1		; if temperature seting too low returt minimum limit
 
-		call	T_SET_WR_EEPROM
-		return
+	call	T_SET_WR_EEPROM ; save the settings
+	return
 
-;---------- вывод T_SET на LCD ----------------
+;---------- show desirable temperature T_SET to LCD ----------------
 T_SET_ON_LCD
-;вывод установленной температуры
-		MOVLW 	0xCB		;курсор в 12поз. 2-й строки
-		CALL WRT_LCD_INSTR
-		MOVLW	0x20		;пробел
-		BTFSC	T_SET, 7h 	;если ст раз=1 - темпер отр.
-		MOVLW	0x2D		;выведем "-"
-		CALL WRT_LCD_DATA	;выводим пробел или "-"
-		MOVF	T_SET,0		;преобразуем к десятичному виду
-		CALL	HEX_DEC
-		MOVF	DEC_H,0
-		ADDLW	0x30		;координаты цифры
-		CALL WRT_LCD_DATA
-		MOVF	DEC_L,0
-		ADDLW	0x30		;координаты цифры
-		CALL WRT_LCD_DATA
-		MOVLW 	0xDF 		;значек градуса
-		CALL WRT_LCD_DATA
-		MOVLW 	0x43 		;"C"
-		CALL WRT_LCD_DATA
-		return
+	MOVLW 	0xCB		; cursor to 12 place in 2nd string
+	CALL WRT_LCD_INSTR
+	MOVLW	0x20		; " "
+	BTFSC	T_SET, 7h 	; if subzerro temperature
+	MOVLW	0x2D		; "-"
+	CALL WRT_LCD_DATA	; show " " or "-"
+	MOVF	T_SET,0		; convert to DEC
+	CALL	HEX_DEC
+	MOVF	DEC_H,0		; tens digit of DEC
+	ADDLW	0x30		
+	CALL WRT_LCD_DATA
+	MOVF	DEC_L,0		; unit digit of DEC
+	ADDLW	0x30		
+	CALL WRT_LCD_DATA
+	MOVLW 	0xDF 		; "В°"
+	CALL WRT_LCD_DATA
+	MOVLW 	0x43 		; "C"
+	CALL WRT_LCD_DATA
+	return
 
-;------------ вывод измеренных температур на LC-----------------
+;------------ Show measured temperatures to LCD -----------------
 T_ON_LCD	
-;вывод внешней температуры
-		MOVLW 	0xC0		;курсор в 1поз. 2-й строки
-		CALL WRT_LCD_INSTR
-		MOVLW	0x20		;пробел 
-		BTFSC	T_OUT, 7h 	;если ст раз=1 - темпер отр.
-		MOVLW	0x2D		;выведем "-"
-		CALL WRT_LCD_DATA	;выводим пробел или "-"
-		MOVF	T_OUT,0		;преобразуем к десятичному виду
-		CALL	HEX_DEC	
-		MOVF	DEC_H,0		;десятки
-		ADDLW	0x30		;координаты цифры
-		CALL WRT_LCD_DATA
-		MOVF	DEC_L,0		;единицы
-		ADDLW	0x30		;координаты цифры
-		CALL WRT_LCD_DATA
-		MOVLW 	0xDF 		;значек градуса
-		CALL WRT_LCD_DATA
-		MOVLW 	0x43 		;"C"
-		CALL WRT_LCD_DATA
-;вывод температуры обдува
-		MOVLW 	0xC6		;курсор в 7поз. 2-й строки
-		CALL WRT_LCD_INSTR
-		MOVLW	0x20		;пробел
-		BTFSC	T_AIR, 7h 	;если ст раз=1 - темпер отр.
-		MOVLW	0x2D		;выведем "-"
-		CALL WRT_LCD_DATA	;выводим пробел или "-"
-		MOVF	T_AIR,0		;преобразуем к десятичному виду
-		CALL	HEX_DEC
-		MOVF	DEC_H,0
-		ADDLW	0x30		;координаты цифры
-		CALL WRT_LCD_DATA
-		MOVF	DEC_L,0
-		ADDLW	0x30		;координаты цифры
-		CALL WRT_LCD_DATA
-		MOVLW 	0xDF 		;значек градуса
-		CALL WRT_LCD_DATA
-		MOVLW 	0x43 		;"C"
-		CALL WRT_LCD_DATA
-		RETURN
+	; outdoor temperature
+	MOVLW 	0xC0		; cursor to 1 place in 2nd string
+	CALL WRT_LCD_INSTR
+	MOVLW	0x20		; " "
+	BTFSC	T_OUT, 7h 	; if subzerro temperature
+	MOVLW	0x2D		; "-"
+	CALL WRT_LCD_DATA	; show " " or "-"
+	MOVF	T_OUT,0		; convert to DEC
+	CALL	HEX_DEC	
+	MOVF	DEC_H,0		; tens digit of DEC
+	ADDLW	0x30		
+	CALL WRT_LCD_DATA
+	MOVF	DEC_L,0		; units digit of DEC
+	ADDLW	0x30		
+	CALL WRT_LCD_DATA
+	MOVLW 	0xDF 		; "В°"
+	CALL WRT_LCD_DATA
+	MOVLW 	0x43 		;"C"
+	CALL WRT_LCD_DATA
+	; heater air temperature
+	MOVLW 	0xC6		; cursor to 7 place in 2nd string
+	CALL WRT_LCD_INSTR
+	MOVLW	0x20		; " "
+	BTFSC	T_AIR, 7h 	; if subzerro temperature
+	MOVLW	0x2D		; "-"
+	CALL WRT_LCD_DATA	; show " " or "-"
+	MOVF	T_AIR,0		; convert to DEC
+	CALL	HEX_DEC
+	MOVF	DEC_H,0		; tens digit of DEC
+	ADDLW	0x30		
+	CALL WRT_LCD_DATA
+	MOVF	DEC_L,0		; units digit of DEC
+	ADDLW	0x30		
+	CALL WRT_LCD_DATA
+	MOVLW 	0xDF 		; "В°"
+	CALL WRT_LCD_DATA
+	MOVLW 	0x43 		; "C"
+	CALL WRT_LCD_DATA
+	RETURN
 
-;------Режим выключенной системы-----------
+;------ sleep mode -----------
 SYSTEM_SLEEP
-		BCF		OUT_ST,VL	;отключаем клапан(статус)
-		BCF		PORTB,V		;отключаем клапан(порт)	
-		BCF		OUT_ST, MOD	;режим - heat system off
-		call	OUT_ST_WR_EEPROM;запис в EEPROM состояние системы
-;Heat System
-;   Off
-		MOVLW 	b'00000001' ;Очистить дисплей
-		CALL	WRT_LCD_INSTR
-		MOVLW 	82h			;курсор в 3поз. 1-й строки
-		CALL WRT_LCD_INSTR
-		MOVLW 	0x48 		;"H"
-		CALL WRT_LCD_DATA
-		MOVLW 	0x65 		;"e"
-		CALL WRT_LCD_DATA
-		MOVLW 	0x61 		;"a"
-		CALL WRT_LCD_DATA
-		MOVLW 	0x74 		;"t"
-		CALL WRT_LCD_DATA
-		MOVLW 	88h			;курсор в 9поз. 1-й строки
-		CALL WRT_LCD_INSTR
-		MOVLW 	0x53 		;"S"
-		CALL WRT_LCD_DATA
-		MOVLW 	0x79 		;"y"
-		CALL WRT_LCD_DATA
-		MOVLW 	0x73 		;"s"
-		CALL WRT_LCD_DATA
-		MOVLW 	0x74 		;"t"
-		CALL WRT_LCD_DATA
-		MOVLW 	0x65 		;"e"
-		CALL WRT_LCD_DATA
-		MOVLW 	0x6D 		;"m"
-		CALL WRT_LCD_DATA
-		MOVLW 	0xC6		;курсор в 7поз. 2-й строки
-		CALL WRT_LCD_INSTR
-		MOVLW 	0x4F 		;"O"
-		CALL WRT_LCD_DATA
-		MOVLW 	0x66 		;"f"
-		CALL WRT_LCD_DATA
-		MOVLW 	0x66 		;"f"
-		CALL WRT_LCD_DATA
+	BCF	OUT_ST,VL	; close valve (status) 
+	BCF	PORTB,V		; close valve (port) 
+	BCF	OUT_ST, MOD	; status heat system off
+	call	OUT_ST_WR_EEPROM; save to EEPROM
+
+	; show Heat System Off on LCD
+	MOVLW 	b'00000001' 	; clear LCD
+	CALL	WRT_LCD_INSTR
+	MOVLW 	82h		; cursor to 3rd place in 1st string
+	CALL WRT_LCD_INSTR
+	MOVLW 	0x48 		;"H"
+	CALL WRT_LCD_DATA
+	MOVLW 	0x65 		;"e"
+	CALL WRT_LCD_DATA
+	MOVLW 	0x61 		;"a"
+	CALL WRT_LCD_DATA
+	MOVLW 	0x74 		;"t"
+	CALL WRT_LCD_DATA
+	MOVLW 	88h		; cursor to 9 place in 1st string
+	CALL WRT_LCD_INSTR
+	MOVLW 	0x53 		;"S"
+	CALL WRT_LCD_DATA
+	MOVLW 	0x79 		;"y"
+	CALL WRT_LCD_DATA
+	MOVLW 	0x73 		;"s"
+	CALL WRT_LCD_DATA
+	MOVLW 	0x74 		;"t"
+	CALL WRT_LCD_DATA
+	MOVLW 	0x65 		;"e"
+	CALL WRT_LCD_DATA
+	MOVLW 	0x6D 		;"m"
+	CALL WRT_LCD_DATA
+	MOVLW 	0xC6		; cursor to 7 place in 2nd string
+	CALL WRT_LCD_INSTR
+	MOVLW 	0x4F 		;"O"
+	CALL WRT_LCD_DATA
+	MOVLW 	0x66 		;"f"
+	CALL WRT_LCD_DATA
+	MOVLW 	0x66 		;"f"
+	CALL WRT_LCD_DATA
 SLEEP_MORE:
-		CLRWDT
-		CLRF	KEY_ST		;обнуляем статусы клавиш
-		BTFSS	PORTA, 3h 	;читаем порт и выставляем флаги
-		BSF	    KEY_ST, D
-		BTFSS	PORTA, 2h 
-		BSF	    KEY_ST, U
+	CLRWDT
+	CLRF	KEY_ST		; clear keys status
+	BTFSS	PORTA, 3h 	; pead port and set flags
+	BSF	KEY_ST, D
+	BTFSS	PORTA, 2h 
+	BSF	KEY_ST, U
 
-		INCF	KEY_ST,1	;если не нажата ни одна клавиша-
-		DECFSZ	KEY_ST,1
-		GOTO	SLEEP_DRIGLING
-		GOTO	SLEEP_MORE
+	INCF	KEY_ST,1	; if no keys pressed
+	DECFSZ	KEY_ST,1
+	GOTO	SLEEP_DRIGLING
+	GOTO	SLEEP_MORE
 SLEEP_DRIGLING:
-		MOVLW	.20
-		CALL 	DELAY_mS	;ждем 20mS
-		BTFSC	PORTA, 3h 	;обнуляем ложные флаги(дребезг)
-		BCF	    KEY_ST, D
-		BTFSC	PORTA, 2h 
-		BCF	    KEY_ST, U
+	MOVLW	.20
+	CALL 	DELAY_mS	; wait 20mS
+	BTFSC	PORTA, 3h 	; clear false flags caused by bounce noice of keys
+	BCF	KEY_ST, D
+	BTFSC	PORTA, 2h 
+	BCF	KEY_ST, U
 
-		INCF	KEY_ST,1	;если не нажата ни одна клавиша-
-		DECFSZ	KEY_ST,1
-		GOTO	WAKE_UP
-		GOTO	SLEEP_MORE
+	INCF	KEY_ST,1	; if no keys pressed
+	DECFSZ	KEY_ST,1
+	GOTO	WAKE_UP
+	GOTO	SLEEP_MORE
 WAKE_UP:
-		CLRWDT			
-		MOVF	PORTA,0	;нужно подождать когда отпустят клавишу
-		ANDLW	b'11100'	;маска на клавиши
-		SUBLW	b'11101'
-		MOVWF	W_STOCK
-		DECFSZ	W_STOCK,1
-		GOTO	WAKE_UP
+	CLRWDT			
+	MOVF	PORTA,0		; wait till key will be released
+	ANDLW	b'11100'	; mask for keys
+	SUBLW	b'11101'
+	MOVWF	W_STOCK
+	DECFSZ	W_STOCK,1
+	GOTO	WAKE_UP
 ; wake up processes
-		BSF		OUT_ST, MOD		;режим - контроль температуры
-		call	OUT_ST_WR_EEPROM;запис в EEPROM состояние системы
-		call	HEADER_LCD		;отобр первой стр. ЖКИ
-		call	T_SET_ON_LCD	;отобр T_SET
-		RETURN
+	BSF	OUT_ST, MOD		; temperature management mode
+	call	OUT_ST_WR_EEPROM	; save system status to EPPROM
+	call	HEADER_LCD		; show 1st string on LCD
+	call	T_SET_ON_LCD		; show desired temperature
+	RETURN
 
-;------Анализ температур и управление клапаном-------------
+;------ Temperature comparation and valve management -------------
 VALVE
-		MOVF	T_SET,0		;достаем опорную темп в W
-		SUBWF	T_AIR,0		;F-W  ->  W
+		MOVF	T_SET,0		; get desired temperature from  W
+		SUBWF	T_AIR,0		; F-W  ->  W
 		MOVWF	W_STOCK	
 		INCF	W_STOCK,1	;
-		DECFSZ	W_STOCK,1	; проверяем условие T_SET=T_AIR
+		DECFSZ	W_STOCK,1	; check T_SET=T_AIR
 		GOTO	CHANGE_V
-		GOTO	VL_RETURN	;температуры ==,ничего не меняем
+		GOTO	VL_RETURN	; ==, no action needed
 CHANGE_V:
-		BTFSC	W_STOCK,7	;если в старш бите 1 -все число отриц
+		BTFSC	W_STOCK,7	; if oldest bit = 1 this is negative number
 		GOTO	HEATING
-		BCF		OUT_ST,VL	;отключаем клапан(статус)
-		BCF		PORTB,V		;отключаем клапан(порт)		
+		BCF	OUT_ST,VL	; close valve(status)
+		BCF	PORTB,V		; close valve(port)	
 		GOTO	VL_RETURN
 HEATING:
-		BSF		OUT_ST,VL	;включаем клапан(статус)
-		BSF		PORTB,V		;включаем клапан(порт)		
+		BSF	OUT_ST,VL	; open valve(status)
+		BSF	PORTB,V		; open valve(port)	
 VL_RETURN:
 		RETURN
 
-;--------------Запись в LCD команды-------------------------
-WRT_LCD_INSTR				;в W - инструкция для ЖКИ
-		MOVWF	RW_STOCK	;инструкцию из аккумулятора в RW_STOCK
-		ANDLW	b'11110000' ;выделяем СТАРШИЙ ПОЛУБАЙТ инструкции
-		BTFSC	OUT_ST,VL	;если клапан д.б.включен
-		ADDLW	1			;добавляем его сигнал управления
-		MOVWF	PORTB		;кидаем в порт В
-		BSF		PORTB,E		;старт записи
-		BCF		PORTB,E		;конец отсылки старшего полубайта
-		SWAPF   RW_STOCK,1 	;меняем местами старш-младш полубайты
-		MOVF	RW_STOCK,0	;достаем развернутую инструкцию в аккумулятор
-		ANDLW	b'11110000' ;выделяем СТАРШИЙ(изначально МЛАДШИЙ) ПОЛУБАЙТ
-		BTFSC	OUT_ST,VL	;если клапан д.б.включен
-		ADDLW	1			;добавляем его сигнал управления	
-		MOVWF	PORTB		;кидаем в порт В
-		BSF		PORTB,E		;старт записи
-		BCF		PORTB,E		;конец отсылки младшего полубайта
-		CALL	BUSY_LCD	;ждем готовность ЖКИ
+;--------------Р—Р°РїРёСЃСЊ РІ LCD РєРѕРјР°РЅРґС‹-------------------------
+WRT_LCD_INSTR				;РІ W - РёРЅСЃС‚СЂСѓРєС†РёСЏ РґР»СЏ Р–РљР
+		MOVWF	RW_STOCK	;РёРЅСЃС‚СЂСѓРєС†РёСЋ РёР· Р°РєРєСѓРјСѓР»СЏС‚РѕСЂР° РІ RW_STOCK
+		ANDLW	b'11110000' 	;РІС‹РґРµР»СЏРµРј РЎРўРђР РЁРР™ РџРћР›РЈР‘РђР™Рў РёРЅСЃС‚СЂСѓРєС†РёРё
+		BTFSC	OUT_ST,VL	;РµСЃР»Рё РєР»Р°РїР°РЅ Рґ.Р±.РІРєР»СЋС‡РµРЅ
+		ADDLW	1		;РґРѕР±Р°РІР»СЏРµРј РµРіРѕ СЃРёРіРЅР°Р» СѓРїСЂР°РІР»РµРЅРёСЏ
+		MOVWF	PORTB		;РєРёРґР°РµРј РІ РїРѕСЂС‚ Р’
+		BSF	PORTB,E		;СЃС‚Р°СЂС‚ Р·Р°РїРёСЃРё
+		BCF	PORTB,E		;РєРѕРЅРµС† РѕС‚СЃС‹Р»РєРё СЃС‚Р°СЂС€РµРіРѕ РїРѕР»СѓР±Р°Р№С‚Р°
+		SWAPF   RW_STOCK,1 	;РјРµРЅСЏРµРј РјРµСЃС‚Р°РјРё СЃС‚Р°СЂС€-РјР»Р°РґС€ РїРѕР»СѓР±Р°Р№С‚С‹
+		MOVF	RW_STOCK,0	;РґРѕСЃС‚Р°РµРј СЂР°Р·РІРµСЂРЅСѓС‚СѓСЋ РёРЅСЃС‚СЂСѓРєС†РёСЋ РІ Р°РєРєСѓРјСѓР»СЏС‚РѕСЂ
+		ANDLW	b'11110000' 	;РІС‹РґРµР»СЏРµРј РЎРўРђР РЁРР™(РёР·РЅР°С‡Р°Р»СЊРЅРѕ РњР›РђР”РЁРР™) РџРћР›РЈР‘РђР™Рў
+		BTFSC	OUT_ST,VL	;РµСЃР»Рё РєР»Р°РїР°РЅ Рґ.Р±.РІРєР»СЋС‡РµРЅ
+		ADDLW	1		;РґРѕР±Р°РІР»СЏРµРј РµРіРѕ СЃРёРіРЅР°Р» СѓРїСЂР°РІР»РµРЅРёСЏ	
+		MOVWF	PORTB		;РєРёРґР°РµРј РІ РїРѕСЂС‚ Р’
+		BSF	PORTB,E		;СЃС‚Р°СЂС‚ Р·Р°РїРёСЃРё
+		BCF	PORTB,E		;РєРѕРЅРµС† РѕС‚СЃС‹Р»РєРё РјР»Р°РґС€РµРіРѕ РїРѕР»СѓР±Р°Р№С‚Р°
+		CALL	BUSY_LCD	;Р¶РґРµРј РіРѕС‚РѕРІРЅРѕСЃС‚СЊ Р–РљР
 		RETURN
 
-;--------------Запись в LCD данных-------------------------
-WRT_LCD_DATA				;в W - данные для ЖКИ
-		MOVWF	RW_STOCK	;данные из аккумулятора в RW_STOCK
-		ANDLW	b'11110000' ;выделяем СТАРШИЙ ПОЛУБАЙТ 
-		BTFSC	OUT_ST,VL	;если клапан д.б.включен
-		ADDLW	1			;добавляем его сигнал управления	
-		MOVWF	PORTB		;кидаем в порт В
-		BSF		PORTB,RS    ;добавляем управляющий сигнал "запись данных" 
-		BSF		PORTB,E		;старт записи
-		BCF		PORTB,E		;конец отсылки старшего полубайта
-		SWAPF   RW_STOCK,1 	;меняем местами старш-младш полубайты
-		MOVF	RW_STOCK,0	;достаем развернутую инструкцию в аккумулятор
-		ANDLW	b'11110000' ;выделяем СТАРШИЙ(изначально МЛАДШИЙ) ПОЛУБАЙТ
-		BTFSC	OUT_ST,VL	;если клапан д.б.включен
-		ADDLW	1			;добавляем его сигнал управления	
-		MOVWF	PORTB		;кидаем в порт В
-		BSF		PORTB,RS    ;добавляем управляющий сигнал "запись данных" 
-		BSF		PORTB,E		;старт записи
-		BCF		PORTB,E		;конец отсылки младшего полубайта
-		CALL	BUSY_LCD	;ждем готовность ЖКИ
+;--------------Р—Р°РїРёСЃСЊ РІ LCD РґР°РЅРЅС‹С…-------------------------
+WRT_LCD_DATA				;РІ W - РґР°РЅРЅС‹Рµ РґР»СЏ Р–РљР
+		MOVWF	RW_STOCK	;РґР°РЅРЅС‹Рµ РёР· Р°РєРєСѓРјСѓР»СЏС‚РѕСЂР° РІ RW_STOCK
+		ANDLW	b'11110000' 	;РІС‹РґРµР»СЏРµРј РЎРўРђР РЁРР™ РџРћР›РЈР‘РђР™Рў 
+		BTFSC	OUT_ST,VL	;РµСЃР»Рё РєР»Р°РїР°РЅ Рґ.Р±.РІРєР»СЋС‡РµРЅ
+		ADDLW	1		;РґРѕР±Р°РІР»СЏРµРј РµРіРѕ СЃРёРіРЅР°Р» СѓРїСЂР°РІР»РµРЅРёСЏ	
+		MOVWF	PORTB		;РєРёРґР°РµРј РІ РїРѕСЂС‚ Р’
+		BSF	PORTB,RS    	;РґРѕР±Р°РІР»СЏРµРј СѓРїСЂР°РІР»СЏСЋС‰РёР№ СЃРёРіРЅР°Р» "Р·Р°РїРёСЃСЊ РґР°РЅРЅС‹С…" 
+		BSF	PORTB,E		;СЃС‚Р°СЂС‚ Р·Р°РїРёСЃРё
+		BCF	PORTB,E		;РєРѕРЅРµС† РѕС‚СЃС‹Р»РєРё СЃС‚Р°СЂС€РµРіРѕ РїРѕР»СѓР±Р°Р№С‚Р°
+		SWAPF   RW_STOCK,1 	;РјРµРЅСЏРµРј РјРµСЃС‚Р°РјРё СЃС‚Р°СЂС€-РјР»Р°РґС€ РїРѕР»СѓР±Р°Р№С‚С‹
+		MOVF	RW_STOCK,0	;РґРѕСЃС‚Р°РµРј СЂР°Р·РІРµСЂРЅСѓС‚СѓСЋ РёРЅСЃС‚СЂСѓРєС†РёСЋ РІ Р°РєРєСѓРјСѓР»СЏС‚РѕСЂ
+		ANDLW	b'11110000' 	;РІС‹РґРµР»СЏРµРј РЎРўРђР РЁРР™(РёР·РЅР°С‡Р°Р»СЊРЅРѕ РњР›РђР”РЁРР™) РџРћР›РЈР‘РђР™Рў
+		BTFSC	OUT_ST,VL	;РµСЃР»Рё РєР»Р°РїР°РЅ Рґ.Р±.РІРєР»СЋС‡РµРЅ
+		ADDLW	1		;РґРѕР±Р°РІР»СЏРµРј РµРіРѕ СЃРёРіРЅР°Р» СѓРїСЂР°РІР»РµРЅРёСЏ	
+		MOVWF	PORTB		;РєРёРґР°РµРј РІ РїРѕСЂС‚ Р’
+		BSF	PORTB,RS    	;РґРѕР±Р°РІР»СЏРµРј СѓРїСЂР°РІР»СЏСЋС‰РёР№ СЃРёРіРЅР°Р» "Р·Р°РїРёСЃСЊ РґР°РЅРЅС‹С…" 
+		BSF	PORTB,E		;СЃС‚Р°СЂС‚ Р·Р°РїРёСЃРё
+		BCF	PORTB,E		;РєРѕРЅРµС† РѕС‚СЃС‹Р»РєРё РјР»Р°РґС€РµРіРѕ РїРѕР»СѓР±Р°Р№С‚Р°
+		CALL	BUSY_LCD	;Р¶РґРµРј РіРѕС‚РѕРІРЅРѕСЃС‚СЊ Р–РљР
 		RETURN
 
-;-------------Ожидание готовности LCD----------------------
+;-------------РћР¶РёРґР°РЅРёРµ РіРѕС‚РѕРІРЅРѕСЃС‚Рё LCD----------------------
 BUSY_LCD
 		MOVLW	.2
  		CALL	DELAY_mS
 		RETURN
 
-;--------преобразование HEX to DEC ---------------
-HEX_DEC	;также отрицательное преобразует в положительное
-		MOVWF	HEX ;"-" следует отслеживать вне подпрограммы
-		BTFSS	HEX, 7h ;если стр разр=0 - темп полож
+;--------РїСЂРµРѕР±СЂР°Р·РѕРІР°РЅРёРµ HEX to DEC ---------------
+HEX_DEC	;С‚Р°РєР¶Рµ РѕС‚СЂРёС†Р°С‚РµР»СЊРЅРѕРµ РїСЂРµРѕР±СЂР°Р·СѓРµС‚ РІ РїРѕР»РѕР¶РёС‚РµР»СЊРЅРѕРµ
+		MOVWF	HEX 		;"-" СЃР»РµРґСѓРµС‚ РѕС‚СЃР»РµР¶РёРІР°С‚СЊ РІРЅРµ РїРѕРґРїСЂРѕРіСЂР°РјРјС‹
+		BTFSS	HEX, 7h 	;РµСЃР»Рё СЃС‚СЂ СЂР°Р·СЂ=0 - С‚РµРјРї РїРѕР»РѕР¶
 		GOTO	DECIMALING
-		XORLW	0xFF	;извлечение модуля из негативного значения
+		XORLW	0xFF		;РёР·РІР»РµС‡РµРЅРёРµ РјРѕРґСѓР»СЏ РёР· РЅРµРіР°С‚РёРІРЅРѕРіРѕ Р·РЅР°С‡РµРЅРёСЏ
 		ADDLW	1
 		MOVWF	HEX
 DECIMALING:
@@ -521,38 +522,38 @@ SUB_10:
 		MOVWF	DEC_L
 		RETURN
 
-;--------Процедуры однопроводного интерфейса-----------------------------------
-T0_HIZ	;-------------Установка вывода 1-го датчика в состояние высокого импеданса 
-        BSF     STATUS,RP0	;Выбор банка 1
-        BSF     TRISA,T0	;установка вывода как вход (высокий импеданс)
-		BCF     STATUS,RP0	;Выбор банка 0
-		RETURN	
-T1_HIZ	;-------------Установка вывода 2-го датчика в состояние высокого импеданса 
-        BSF     STATUS,RP0	;Выбор банка 1
-        BSF     TRISA,T1	;установка вывода как вход (высокий импеданс)
-		BCF     STATUS,RP0	;Выбор банка 0
-		RETURN	
-T0_LO	;-------------Установка вывода 1-го датчика в 0
-		BCF		PORTA,T0	;Записываем 0 
-		BSF     STATUS,RP0	;Выбор банка 1
-        BCF     TRISA,T0	;установка вывода как выход
-		BCF     STATUS,RP0	;Выбор банка 0
-		RETURN
-T1_LO	;-------------Установка вывода 2-го датчика в 0
-		BCF		PORTA,T1	;Записываем 0 
-		BSF     STATUS,RP0	;Выбор банка 1
-        BCF     TRISA,T1	;установка вывода как выход
-		BCF     STATUS,RP0	;Выбор банка 0
-		RETURN
+;--------РџСЂРѕС†РµРґСѓСЂС‹ РѕРґРЅРѕРїСЂРѕРІРѕРґРЅРѕРіРѕ РёРЅС‚РµСЂС„РµР№СЃР°-----------------------------------
+T0_HIZ	;-------------РЈСЃС‚Р°РЅРѕРІРєР° РІС‹РІРѕРґР° 1-РіРѕ РґР°С‚С‡РёРєР° РІ СЃРѕСЃС‚РѕСЏРЅРёРµ РІС‹СЃРѕРєРѕРіРѕ РёРјРїРµРґР°РЅСЃР° 
+        BSF     STATUS,RP0	;Р’С‹Р±РѕСЂ Р±Р°РЅРєР° 1
+        BSF     TRISA,T0	;СѓСЃС‚Р°РЅРѕРІРєР° РІС‹РІРѕРґР° РєР°Рє РІС…РѕРґ (РІС‹СЃРѕРєРёР№ РёРјРїРµРґР°РЅСЃ)
+	BCF     STATUS,RP0	;Р’С‹Р±РѕСЂ Р±Р°РЅРєР° 0
+	RETURN	
+T1_HIZ	;-------------РЈСЃС‚Р°РЅРѕРІРєР° РІС‹РІРѕРґР° 2-РіРѕ РґР°С‚С‡РёРєР° РІ СЃРѕСЃС‚РѕСЏРЅРёРµ РІС‹СЃРѕРєРѕРіРѕ РёРјРїРµРґР°РЅСЃР° 
+        BSF     STATUS,RP0	;Р’С‹Р±РѕСЂ Р±Р°РЅРєР° 1
+        BSF     TRISA,T1	;СѓСЃС‚Р°РЅРѕРІРєР° РІС‹РІРѕРґР° РєР°Рє РІС…РѕРґ (РІС‹СЃРѕРєРёР№ РёРјРїРµРґР°РЅСЃ)
+	BCF     STATUS,RP0	;Р’С‹Р±РѕСЂ Р±Р°РЅРєР° 0
+	RETURN	
+T0_LO	;-------------РЈСЃС‚Р°РЅРѕРІРєР° РІС‹РІРѕРґР° 1-РіРѕ РґР°С‚С‡РёРєР° РІ 0
+	BCF	PORTA,T0	;Р—Р°РїРёСЃС‹РІР°РµРј 0 
+	BSF     STATUS,RP0	;Р’С‹Р±РѕСЂ Р±Р°РЅРєР° 1
+        BCF     TRISA,T0	;СѓСЃС‚Р°РЅРѕРІРєР° РІС‹РІРѕРґР° РєР°Рє РІС‹С…РѕРґ
+	BCF     STATUS,RP0	;Р’С‹Р±РѕСЂ Р±Р°РЅРєР° 0
+	RETURN
+T1_LO	;-------------РЈСЃС‚Р°РЅРѕРІРєР° РІС‹РІРѕРґР° 2-РіРѕ РґР°С‚С‡РёРєР° РІ 0
+	BCF	PORTA,T1	;Р—Р°РїРёСЃС‹РІР°РµРј 0 
+	BSF     STATUS,RP0	;Р’С‹Р±РѕСЂ Р±Р°РЅРєР° 1
+        BCF     TRISA,T1	;СѓСЃС‚Р°РЅРѕРІРєР° РІС‹РІРѕРґР° РєР°Рє РІС‹С…РѕРґ
+	BCF     STATUS,RP0	;Р’С‹Р±РѕСЂ Р±Р°РЅРєР° 0
+	RETURN
 T0_RESET
-		CALL 	T0_HIZ		; --> 1
-		CALL 	T0_LO		; --> 0
-		MOVLW	.50
-		CALL	DELAY_x10mkS		
-		CALL 	T0_HIZ		; --> 1
-		MOVLW	.50
-		CALL	DELAY_x10mkS		
-		RETURN
+	CALL 	T0_HIZ		; --> 1
+	CALL 	T0_LO		; --> 0
+	MOVLW	.50
+	CALL	DELAY_x10mkS		
+	CALL 	T0_HIZ		; --> 1
+	MOVLW	.50
+	CALL	DELAY_x10mkS		
+	RETURN
 T1_RESET
 		CALL 	T1_HIZ		; --> 1
 		CALL 	T1_LO		; --> 0
@@ -562,74 +563,74 @@ T1_RESET
 		MOVLW	.50
 		CALL	DELAY_x10mkS		
 		RETURN
-T0_WRITE	;---------Вывод команды на темпер. датчик 1----
-		MOVWF	T_STOCK	;передаваемый байт
+T0_WRITE	;---------Р’С‹РІРѕРґ РєРѕРјР°РЅРґС‹ РЅР° С‚РµРјРїРµСЂ. РґР°С‚С‡РёРє 1----
+		MOVWF	T_STOCK	;РїРµСЂРµРґР°РІР°РµРјС‹Р№ Р±Р°Р№С‚
 		MOVLW	.8
-		MOVWF	COUNT		;счетчик битов
+		MOVWF	COUNT		;СЃС‡РµС‚С‡РёРє Р±РёС‚РѕРІ
 T0_WLOOP:
 		CALL	T0_LO		; --> 0
-		RRF		T_STOCK,1	;сдвигаем через Carry Flag
-		BSF		STATUS,RP0	;Выбор банка 1
-		BTFSC	STATUS,C	;проверяем Carry Flag
-		BSF		TRISA,T0	;HIZ если 1
-		BCF     STATUS,RP0	;Выбор банка 0
+		RRF		T_STOCK,1	;СЃРґРІРёРіР°РµРј С‡РµСЂРµР· Carry Flag
+		BSF		STATUS,RP0	;Р’С‹Р±РѕСЂ Р±Р°РЅРєР° 1
+		BTFSC	STATUS,C	;РїСЂРѕРІРµСЂСЏРµРј Carry Flag
+		BSF		TRISA,T0	;HIZ РµСЃР»Рё 1
+		BCF     STATUS,RP0	;Р’С‹Р±РѕСЂ Р±Р°РЅРєР° 0
 		MOVLW	.6
-		CALL	DELAY_x10mkS;задержка 64 мкс
+		CALL	DELAY_x10mkS;Р·Р°РґРµСЂР¶РєР° 64 РјРєСЃ
 		CALL	T0_HIZ		; --> 1
 		DECFSZ	COUNT,1
 		GOTO	T0_WLOOP
 		RETURN	
-T1_WRITE	;---------Вывод команды на темпер. датчик 2----
-		MOVWF	T_STOCK	;передаваемый байт
+T1_WRITE	;---------Р’С‹РІРѕРґ РєРѕРјР°РЅРґС‹ РЅР° С‚РµРјРїРµСЂ. РґР°С‚С‡РёРє 2----
+		MOVWF	T_STOCK	;РїРµСЂРµРґР°РІР°РµРјС‹Р№ Р±Р°Р№С‚
 		MOVLW	.8
-		MOVWF	COUNT		;счетчик битов
+		MOVWF	COUNT		;СЃС‡РµС‚С‡РёРє Р±РёС‚РѕРІ
 T1_WLOOP:
 		CALL	T1_LO		; --> 0
-		RRF		T_STOCK,1	;сдвигаем через Carry Flag
-		BSF		STATUS,RP0	;Выбор банка 1
-		BTFSC	STATUS,C	;проверяем Carry Flag
-		BSF		TRISA,T1	;HIZ если 1
-		BCF     STATUS,RP0	;Выбор банка 0
+		RRF		T_STOCK,1	;СЃРґРІРёРіР°РµРј С‡РµСЂРµР· Carry Flag
+		BSF		STATUS,RP0	;Р’С‹Р±РѕСЂ Р±Р°РЅРєР° 1
+		BTFSC	STATUS,C	;РїСЂРѕРІРµСЂСЏРµРј Carry Flag
+		BSF		TRISA,T1	;HIZ РµСЃР»Рё 1
+		BCF     STATUS,RP0	;Р’С‹Р±РѕСЂ Р±Р°РЅРєР° 0
 		MOVLW	.6
-		CALL	DELAY_x10mkS;задержка 64 мкс
+		CALL	DELAY_x10mkS;Р·Р°РґРµСЂР¶РєР° 64 РјРєСЃ
 		CALL	T1_HIZ		; --> 1
 		DECFSZ	COUNT,1
 		GOTO	T1_WLOOP
 		RETURN	
 	
-T0_READ		;--------Чтение 1-го датч темпер ------
-		MOVLW	.9		;циклов будет на 1 больше, т.к. в 0 бите - дробное значение температуры, мы его пропустим
-		MOVWF	COUNT		;счетчик битов
+T0_READ		;--------Р§С‚РµРЅРёРµ 1-РіРѕ РґР°С‚С‡ С‚РµРјРїРµСЂ ------
+		MOVLW	.9		;С†РёРєР»РѕРІ Р±СѓРґРµС‚ РЅР° 1 Р±РѕР»СЊС€Рµ, С‚.Рє. РІ 0 Р±РёС‚Рµ - РґСЂРѕР±РЅРѕРµ Р·РЅР°С‡РµРЅРёРµ С‚РµРјРїРµСЂР°С‚СѓСЂС‹, РјС‹ РµРіРѕ РїСЂРѕРїСѓСЃС‚РёРј
+		MOVWF	COUNT		;СЃС‡РµС‚С‡РёРє Р±РёС‚РѕРІ
 T0_RLOOP:
 		CALL	T0_LO		; --> 0
 		CALL	T0_HIZ		; --> 1
 		NOP					
 		NOP
-		MOVF	PORTA,0		;читаем бит
-		ANDLW	b'00000001'	;маска
-		ADDLW	.255		;если прочли 1 будет переполнение
-		RRF		T_STOCK,1	;задвигаем флар переполнения в переменную
+		MOVF	PORTA,0		;С‡РёС‚Р°РµРј Р±РёС‚
+		ANDLW	b'00000001'	;РјР°СЃРєР°
+		ADDLW	.255		;РµСЃР»Рё РїСЂРѕС‡Р»Рё 1 Р±СѓРґРµС‚ РїРµСЂРµРїРѕР»РЅРµРЅРёРµ
+		RRF		T_STOCK,1	;Р·Р°РґРІРёРіР°РµРј С„Р»Р°СЂ РїРµСЂРµРїРѕР»РЅРµРЅРёСЏ РІ РїРµСЂРµРјРµРЅРЅСѓСЋ
 		MOVLW	.5
-		CALL	DELAY_x10mkS;задержка 54 мкс	
+		CALL	DELAY_x10mkS;Р·Р°РґРµСЂР¶РєР° 54 РјРєСЃ	
 		DECFSZ	COUNT,1
 		GOTO	T0_RLOOP
 		MOVF	T_STOCK,0	
 		RETURN
 
-T1_READ		;--------Чтение 2-го датч темпер ------
-		MOVLW	.9		;циклов будет на 1 больше, т.к. в 0 бите - дробное значение температуры, мы его пропустим
-		MOVWF	COUNT		;счетчик битов
+T1_READ		;--------Р§С‚РµРЅРёРµ 2-РіРѕ РґР°С‚С‡ С‚РµРјРїРµСЂ ------
+		MOVLW	.9		;С†РёРєР»РѕРІ Р±СѓРґРµС‚ РЅР° 1 Р±РѕР»СЊС€Рµ, С‚.Рє. РІ 0 Р±РёС‚Рµ - РґСЂРѕР±РЅРѕРµ Р·РЅР°С‡РµРЅРёРµ С‚РµРјРїРµСЂР°С‚СѓСЂС‹, РјС‹ РµРіРѕ РїСЂРѕРїСѓСЃС‚РёРј
+		MOVWF	COUNT		;СЃС‡РµС‚С‡РёРє Р±РёС‚РѕРІ
 T1_RLOOP:
 		CALL	T1_LO		; --> 0
 		CALL	T1_HIZ		; --> 1
 		NOP					
 		NOP
-		MOVF	PORTA,0		;читаем бит
-		ANDLW	b'00000010'	;маска
-		ADDLW	.255		;если прочли 1 будет переполнение
-		RRF		T_STOCK,1	;задвигаем флар переполнения в переменную
+		MOVF	PORTA,0		;С‡РёС‚Р°РµРј Р±РёС‚
+		ANDLW	b'00000010'	;РјР°СЃРєР°
+		ADDLW	.255		;РµСЃР»Рё РїСЂРѕС‡Р»Рё 1 Р±СѓРґРµС‚ РїРµСЂРµРїРѕР»РЅРµРЅРёРµ
+		RRF	T_STOCK,1	;Р·Р°РґРІРёРіР°РµРј С„Р»Р°СЂ РїРµСЂРµРїРѕР»РЅРµРЅРёСЏ РІ РїРµСЂРµРјРµРЅРЅСѓСЋ
 		MOVLW	.5
-		CALL	DELAY_x10mkS;задержка 54 мкс	
+		CALL	DELAY_x10mkS	;Р·Р°РґРµСЂР¶РєР° 54 РјРєСЃ	
 		DECFSZ	COUNT,1
 		GOTO	T1_RLOOP
 		MOVF	T_STOCK,0	
@@ -637,77 +638,77 @@ T1_RLOOP:
 
 ;--------T_SET_store in EEPROM_write--------------
 T_SET_WR_EEPROM
-		BCF		STATUS, RP0 ; Bank 0
-		MOVFW	T_SET	;WE WILL WRITE SET TEMPR TO EEPROM
-		MOVWF	EEDATA	;WRITING DATA W-->EEDATA REG
+		BCF	STATUS, RP0 ; Bank 0
+		MOVFW	T_SET		;WE WILL WRITE SET TEMPR TO EEPROM
+		MOVWF	EEDATA		;WRITING DATA W-->EEDATA REG
 		MOVLW	0x00
-		MOVWF	EEADR	; WRITE Address 
-		call	EEPROM_WR_SEQ; write T_SET in 0x01 EEPROM
+		MOVWF	EEADR		; WRITE Address 
+		call	EEPROM_WR_SEQ	; write T_SET in 0x01 EEPROM
 		return
 
-;------- Запоминание состояния системы -----------
+;------- Р—Р°РїРѕРјРёРЅР°РЅРёРµ СЃРѕСЃС‚РѕСЏРЅРёСЏ СЃРёСЃС‚РµРјС‹ -----------
 OUT_ST_WR_EEPROM
-		BCF		STATUS, RP0 ; Bank 0
-		MOVFW	OUT_ST	;WE WILL WRITE OUT_ST TO EEPROM
-		MOVWF	EEDATA	;WRITING DATA W-->EEDATA REG
+		BCF	STATUS, RP0 ; Bank 0
+		MOVFW	OUT_ST		;WE WILL WRITE OUT_ST TO EEPROM
+		MOVWF	EEDATA		;WRITING DATA W-->EEDATA REG
 		MOVLW	0x01
-		MOVWF	EEADR	; WRITE Address 
-		call	EEPROM_WR_SEQ; write T_SET in 0x01 EEPROM
+		MOVWF	EEADR		; WRITE Address 
+		call	EEPROM_WR_SEQ	; write T_SET in 0x01 EEPROM
 		return
 
 ;--------- EEPROM_write standard sequence ---------
 EEPROM_WR_SEQ
-		BSF		STATUS, RP0 ; Bank 1
-		BCF		INTCON, GIE ; Disable INTs.
-		BSF		EECON1, WREN ; Enable Write
-		MOVLW	55h ;
-		MOVWF	EECON2 ; Write 55h
-		MOVLW	0xAA ;
-		MOVWF	EECON2 ; Write AAh
-		BSF		EECON1,WR ; Set WR bit
+		BSF	STATUS, RP0 	; Bank 1
+		BCF	INTCON, GIE 	; Disable INTs.
+		BSF	EECON1, WREN 	; Enable Write
+		MOVLW	55h
+		MOVWF	EECON2 		; Write 55h
+		MOVLW	0xAA
+		MOVWF	EECON2 		; Write AAh
+		BSF	EECON1,WR ; Set WR bit
 		; begin write
-		BSF		INTCON, GIE ; Enable INTs.
+		BSF	INTCON, GIE 	; Enable INTs.
 		movlw	.15		
 		call	DELAY_mS	;wait till write process finish
-		BCF		STATUS, RP0 ; Bank 0
+		BCF	STATUS, RP0 	; Bank 0
 		return
 
 ;--------T_SET read from EEPROM--------------
 T_SET_RD_EEPROM
-		BCF		STATUS, RP0 ; Bank 0
+		BCF	STATUS, RP0 	; Bank 0
 		MOVLW	0x00		;Address to read
 		MOVWF	EEADR		; Address to read
-		BSF		STATUS, RP0	; Bank 1
-		BSF		EECON1, RD	; EE Read
-		BCF		STATUS, RP0	; Bank 0
+		BSF	STATUS, RP0	; Bank 1
+		BSF	EECON1, RD	; EE Read
+		BCF	STATUS, RP0	; Bank 0
 		MOVF	EEDATA, 0	; W = EEDATA
-		BCF		STATUS, RP0 ; Bank 0
+		BCF	STATUS, RP0 	; Bank 0
 		MOVWF	T_SET		; save in T_SET
 		RETURN
 
 ;--------OUT_ST read from EEPROM--------------
 OUT_ST_RD_EEPROM
-		BCF		STATUS, RP0 ; Bank 0
-		MOVLW	0x01		;Address to read
+		BCF	STATUS, RP0 	; Bank 0
+		MOVLW	0x01		; Address to read
 		MOVWF	EEADR		; Address to read
-		BSF		STATUS, RP0	; Bank 1
-		BSF		EECON1, RD	; EE Read
-		BCF		STATUS, RP0	; Bank 0
+		BSF	STATUS, RP0	; Bank 1
+		BSF	EECON1, RD	; EE Read
+		BCF	STATUS, RP0	; Bank 0
 		MOVF	EEDATA, 0	; W = EEDATA
-		BCF		STATUS, RP0 ; Bank 0
+		BCF	STATUS, RP0 	; Bank 0
 		MOVWF	OUT_ST		; save in OUT_ST
 		RETURN
 
-;--------Задержка 1...255 мс----------------------------------------------------
-DELAY_mS ;в W находится время задержки в мс
+;--------Р—Р°РґРµСЂР¶РєР° 1...255 РјСЃ----------------------------------------------------
+DELAY_mS ;РІ W РЅР°С…РѕРґРёС‚СЃСЏ РІСЂРµРјСЏ Р·Р°РґРµСЂР¶РєРё РІ РјСЃ
         MOVWF 	COUNT1
-		NOP
-		NOP
+	NOP
+	NOP
 OUTTER:
-		MOVLW   .111      ; Задержка 1 мс
+	MOVLW   .111      ; Р—Р°РґРµСЂР¶РєР° 1 РјСЃ
         MOVWF   COUNT2
 INNER:
-        NOP ; Задержка 1 мс
+        NOP ; Р—Р°РґРµСЂР¶РєР° 1 РјСЃ
         NOP
         NOP
         NOP
@@ -717,10 +718,10 @@ INNER:
         GOTO 	INNER
         DECFSZ  COUNT1, F
         GOTO 	OUTTER
-		CLRWDT
+	CLRWDT
         RETURN
-;--------Задержка 14...2554 мкс-------------------------------
-DELAY_x10mkS:   ;Задержка определяется как W*10+4 мкс (14mkS- 2554mkS)
+;--------Р—Р°РґРµСЂР¶РєР° 14...2554 РјРєСЃ-------------------------------
+DELAY_x10mkS:   ;Р—Р°РґРµСЂР¶РєР° РѕРїСЂРµРґРµР»СЏРµС‚СЃСЏ РєР°Рє W*10+4 РјРєСЃ (14mkS- 2554mkS)
         MOVWF 	COUNT1
 DELAY_10USEC_1:
       	NOP
@@ -732,7 +733,7 @@ DELAY_10USEC_1:
         NOP
         DECFSZ 	COUNT1, F
         GOTO 	DELAY_10USEC_1
-		CLRWDT
+	CLRWDT
         RETURN
 ;---------------------------------------------------------------
-		END
+	END
