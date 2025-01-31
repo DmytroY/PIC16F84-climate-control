@@ -136,29 +136,29 @@ HEADER_LCD
 	MOVLW 	b'00000001' 	; clear LCD
 	CALL	WRT_LCD_INSTR
 	MOVLW 	81h		; cursor to 2nd place in 1st string
-	CALL WRT_LCD_INSTR
+	CALL 	WRT_LCD_INSTR
 	MOVLW 	0x4F 		;"O"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVLW 	0x55 		;"U"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVLW 	0x54 		;"T"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVLW 	87h		; cursor to 8 place in 1st string
-	CALL WRT_LCD_INSTR
+	CALL 	WRT_LCD_INSTR
 	MOVLW 	0x41 		;"A"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVLW 	0x49 		;"I"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVLW 	0x52 		;"R"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVLW 	8Ch		; cursor to 13 place in 1st string
-	CALL WRT_LCD_INSTR
+	CALL 	WRT_LCD_INSTR
 	MOVLW 	0x53 		;"S"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVLW 	0x45 		;"E"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVLW 	0x54 		;"T"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	return
 ;-------- Scan temperature sensors ----------------------
 TERMOMETR
@@ -289,65 +289,65 @@ T_SET_RECALC
 ;---------- show desirable temperature T_SET to LCD ----------------
 T_SET_ON_LCD
 	MOVLW 	0xCB		; cursor to 12 place in 2nd string
-	CALL WRT_LCD_INSTR
+	CALL 	WRT_LCD_INSTR
 	MOVLW	0x20		; " "
 	BTFSC	T_SET, 7h 	; if subzerro temperature
 	MOVLW	0x2D		; "-"
-	CALL WRT_LCD_DATA	; show " " or "-"
+	CALL 	WRT_LCD_DATA	; show " " or "-"
 	MOVF	T_SET,0		; convert to DEC
 	CALL	HEX_DEC
 	MOVF	DEC_H,0		; tens digit of DEC
 	ADDLW	0x30		
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVF	DEC_L,0		; unit digit of DEC
 	ADDLW	0x30		
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVLW 	0xDF 		; "°"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVLW 	0x43 		; "C"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	return
 
 ;------------ Show measured temperatures to LCD -----------------
 T_ON_LCD	
 	; outdoor temperature
 	MOVLW 	0xC0		; cursor to 1 place in 2nd string
-	CALL WRT_LCD_INSTR
+	CALL 	WRT_LCD_INSTR
 	MOVLW	0x20		; " "
 	BTFSC	T_OUT, 7h 	; if subzerro temperature
 	MOVLW	0x2D		; "-"
-	CALL WRT_LCD_DATA	; show " " or "-"
+	CALL 	WRT_LCD_DATA	; show " " or "-"
 	MOVF	T_OUT,0		; convert to DEC
 	CALL	HEX_DEC	
 	MOVF	DEC_H,0		; tens digit of DEC
 	ADDLW	0x30		
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVF	DEC_L,0		; units digit of DEC
 	ADDLW	0x30		
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVLW 	0xDF 		; "°"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVLW 	0x43 		;"C"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	; heater air temperature
 	MOVLW 	0xC6		; cursor to 7 place in 2nd string
-	CALL WRT_LCD_INSTR
+	CALL 	WRT_LCD_INSTR
 	MOVLW	0x20		; " "
 	BTFSC	T_AIR, 7h 	; if subzerro temperature
 	MOVLW	0x2D		; "-"
-	CALL WRT_LCD_DATA	; show " " or "-"
+	CALL 	WRT_LCD_DATA	; show " " or "-"
 	MOVF	T_AIR,0		; convert to DEC
 	CALL	HEX_DEC
 	MOVF	DEC_H,0		; tens digit of DEC
 	ADDLW	0x30		
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVF	DEC_L,0		; units digit of DEC
 	ADDLW	0x30		
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVLW 	0xDF 		; "°"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVLW 	0x43 		; "C"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	RETURN
 
 ;------ sleep mode -----------
@@ -361,37 +361,37 @@ SYSTEM_SLEEP
 	MOVLW 	b'00000001' 	; clear LCD
 	CALL	WRT_LCD_INSTR
 	MOVLW 	82h		; cursor to 3rd place in 1st string
-	CALL WRT_LCD_INSTR
+	CALL 	WRT_LCD_INSTR
 	MOVLW 	0x48 		;"H"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVLW 	0x65 		;"e"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVLW 	0x61 		;"a"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVLW 	0x74 		;"t"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVLW 	88h		; cursor to 9 place in 1st string
-	CALL WRT_LCD_INSTR
+	CALL 	WRT_LCD_INSTR
 	MOVLW 	0x53 		;"S"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVLW 	0x79 		;"y"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVLW 	0x73 		;"s"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVLW 	0x74 		;"t"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVLW 	0x65 		;"e"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVLW 	0x6D 		;"m"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVLW 	0xC6		; cursor to 7 place in 2nd string
-	CALL WRT_LCD_INSTR
+	CALL 	WRT_LCD_INSTR
 	MOVLW 	0x4F 		;"O"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVLW 	0x66 		;"f"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 	MOVLW 	0x66 		;"f"
-	CALL WRT_LCD_DATA
+	CALL 	WRT_LCD_DATA
 SLEEP_MORE:
 	CLRWDT
 	CLRF	KEY_ST		; clear keys status
