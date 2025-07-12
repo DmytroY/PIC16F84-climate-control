@@ -10,6 +10,7 @@ Hardware:
 - DS18S20 - temperature censors, 2pcs
 - BC1602E - LCD 2x16
 - 4 MHz quarz
+  
 (PCB design by link)[https://oshwlab.com/dmitry.yakovenko/first_proj]
 
 Software:
