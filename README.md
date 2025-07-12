@@ -9,7 +9,8 @@ Hardware:
 - PIC 16F84A - microcontroller
 - DS18S20 - temperature censors, 2pcs
 - BC1602E - LCD 2x16
-- 4 MHz quarz 
+- 4 MHz quarz
+(PCB design by link)[https://oshwlab.com/dmitry.yakovenko/first_proj]
 
 Software:
 - Clima-Rus.HEX - compiled soft with russian interface.
