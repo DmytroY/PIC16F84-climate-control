@@ -12,6 +12,7 @@ Hardware:
 - 4 MHz quarz
   
 [link to PCB design](http://bit.ly/3Gwjb2T)
+<!-- https://oshwlab.com/dmitry.yakovenko/first_proj -->
 
 Software:
 - Clima-Rus.HEX - compiled soft with russian interface.
